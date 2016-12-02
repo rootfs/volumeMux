@@ -98,7 +98,7 @@ func addPod(obj interface{}) {
 }
 
 func updatePod(oldObj, newObj interface{}) {
-	addPod(newObj)
+
 }
 
 func deletePod(obj interface{}) {

@@ -17,8 +17,8 @@ import (
 )
 
 var (
-	master     = flag.String("master", "", "Master URL to build a client config from. Either this or kubeconfig needs to be set if the provisioner is being run out of cluster.")
-	kubeconfig = flag.String("kubeconfig", "", "Absolute path to the kubeconfig file. Either this or master needs to be set if the provisioner is being run out of cluster.")
+	master     = flag.String("master", "", "Master URL")
+	kubeconfig = flag.String("kubeconfig", "", "Absolute path to the kubeconfig")
 	namespace  = flag.String("namespace", "", "Namespace to watch. Default is all namespaces.")
 )
 
