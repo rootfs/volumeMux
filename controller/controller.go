@@ -37,9 +37,13 @@ const (
 type PodVolumeController struct {
 	client kubernetes.Interface
 
-	podSource     cache.ListerWatcher
-	podController *cache.Controller
-	store         cache.Store
+	podSource       cache.ListerWatcher
+	podController   *cache.Controller
+	claimSource     cache.ListerWatcher
+	claimController *cache.Controller
+
+	podStore      cache.Store
+	claimStore    cache.Store
 	eventRecorder record.EventRecorder
 }
 
@@ -59,7 +63,7 @@ func NewPodVolumeController(client kubernetes.Interface, resyncPeriod time.Durat
 		client:        client,
 		eventRecorder: eventRecorder,
 	}
-
+	// pod
 	controller.podSource = &cache.ListWatch{
 		ListFunc: func(options api.ListOptions) (runtime.Object, error) {
 			var out v1.ListOptions
@@ -73,7 +77,7 @@ func NewPodVolumeController(client kubernetes.Interface, resyncPeriod time.Durat
 		},
 	}
 
-	controller.store, controller.podController = cache.NewInformer(
+	controller.podStore, controller.podController = cache.NewInformer(
 		controller.podSource,
 		&v1.Pod{},
 		resyncPeriod,
@@ -83,10 +87,35 @@ func NewPodVolumeController(client kubernetes.Interface, resyncPeriod time.Durat
 			DeleteFunc: deletePod,
 		},
 	)
+	// claim
+	controller.claimSource = &cache.ListWatch{
+		ListFunc: func(options api.ListOptions) (runtime.Object, error) {
+			var out v1.ListOptions
+			v1.Convert_api_ListOptions_To_v1_ListOptions(&options, &out, nil)
+			return client.Core().PersistentVolumeClaims(namespace).List(out)
+		},
+		WatchFunc: func(options api.ListOptions) (watch.Interface, error) {
+			var out v1.ListOptions
+			v1.Convert_api_ListOptions_To_v1_ListOptions(&options, &out, nil)
+			return client.Core().PersistentVolumeClaims(namespace).Watch(out)
+		},
+	}
+
+	controller.claimStore, controller.claimController = cache.NewInformer(
+		controller.claimSource,
+		&v1.PersistentVolumeClaim{},
+		resyncPeriod,
+		cache.ResourceEventHandlerFuncs{
+			AddFunc:    addPVC,
+			UpdateFunc: updatePVC,
+			DeleteFunc: deletePVC,
+		},
+	)
 
 	return controller, nil
 }
 
+// pod
 func addPod(obj interface{}) {
 	pod, ok := obj.(*v1.Pod)
 	if !ok {
@@ -95,6 +124,13 @@ func addPod(obj interface{}) {
 	}
 
 	glog.Infof("add pod: %s", pod.Name)
+	vols := pod.Spec.Volumes
+	for _, vol := range vols {
+		if vol.VolumeSource.PersistentVolumeClaim != nil {
+			glog.Infof("pod PVC: %s", vol.VolumeSource.PersistentVolumeClaim.ClaimName)
+		}
+
+	}
 }
 
 func updatePod(oldObj, newObj interface{}) {
@@ -111,8 +147,34 @@ func deletePod(obj interface{}) {
 	glog.Infof("delete pod: %s", pod.Name)
 }
 
+// claims
+func addPVC(obj interface{}) {
+	pvc, ok := obj.(*v1.PersistentVolumeClaim)
+	if !ok {
+		glog.Errorf("Expected PVC but received %+v", obj)
+		return
+	}
+
+	glog.Infof("add pvc: %s", pvc.Name)
+}
+
+func updatePVC(oldObj, newObj interface{}) {
+
+}
+
+func deletePVC(obj interface{}) {
+	pvc, ok := obj.(*v1.PersistentVolumeClaim)
+	if !ok {
+		glog.Errorf("Expected PVC but received %+v", obj)
+		return
+	}
+
+	glog.Infof("delete pvc: %s", pvc.Name)
+}
+
 func (ctrl *PodVolumeController) Run(stopCh <-chan struct{}) {
 	glog.Info("Starting pod volume controller!")
 	go ctrl.podController.Run(stopCh)
+	go ctrl.claimController.Run(stopCh)
 	<-stopCh
 }
